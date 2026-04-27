@@ -1,0 +1,155 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/ml4t/models/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ml4t"]
+namespaces = true
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/pyproject.toml",
+]
+
+[project]
+name = "ml4t-models"
+dynamic = ["version"]
+description = "Finance-specific latent-factor and portfolio-learning models for ML4T"
+license = { text = "MIT" }
+authors = [
+    { name = "Stefan Jansen", email = "stefan@ml4trading.io" },
+]
+maintainers = [
+    { name = "Stefan Jansen", email = "stefan@ml4trading.io" },
+]
+keywords = [
+    "finance",
+    "machine-learning",
+    "deep-learning",
+    "latent-factors",
+    "portfolio-learning",
+    "algorithmic-trading",
+    "quantitative-finance",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Typing :: Typed",
+]
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "numpy>=1.26,<2.3",
+]
+
+[project.optional-dependencies]
+deep = [
+    "torch>=2.4",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.8.0",
+    "ty",
+    "pre-commit>=3.3.0",
+    "torch>=2.4",
+]
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.24.0",
+]
+all = [
+    "ml4t-models[deep,dev,docs]",
+]
+
+[project.urls]
+Homepage = "https://github.com/ml4t/models"
+Repository = "https://github.com/ml4t/models"
+Issues = "https://github.com/ml4t/models/issues"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.8.0",
+    "ty",
+    "pre-commit>=3.3.0",
+    "torch>=2.4",
+    "twine>=6.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--cov=ml4t.models",
+    "--cov-report=term-missing",
+]
+markers = [
+    "slow: marks tests as slow",
+    "optional_dependency: marks tests requiring optional heavy dependencies",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+fix = true
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "W",
+    "F",
+    "I",
+    "B",
+    "C4",
+    "UP",
+    "ARG",
+    "SIM",
+]
+ignore = [
+    "E501",
+    "B008",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ARG001", "ARG002", "B017", "SIM108"]
+
+[tool.ty.environment]
+python-version = "3.12"
+root = ["src"]
+
+[tool.ty.src]
+include = ["src"]
+exclude = ["tests"]
+
+[tool.coverage.run]
+source = ["src/ml4t/models"]
+omit = ["*/__init__.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "@abstractmethod",
+]

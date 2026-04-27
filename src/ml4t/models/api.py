@@ -1,0 +1,63 @@
+"""Public protocols for ml4t-models."""
+
+from __future__ import annotations
+
+from typing import Protocol
+
+from ml4t.models.types import (
+    AssetForecastResult,
+    CrossSectionBatch,
+    FactorForecastResult,
+    FitSummary,
+    LatentFactorState,
+    PersistentPanelBatch,
+    PortfolioSequenceBatch,
+    PortfolioWeightsResult,
+)
+
+PanelBatch = PersistentPanelBatch | CrossSectionBatch
+
+
+class LatentFactorModel(Protocol):
+    """Protocol for structural latent-factor estimators."""
+
+    is_fitted: bool
+
+    def fit(self, batch: PanelBatch) -> FitSummary: ...
+
+    def extract(
+        self,
+        batch: PanelBatch,
+        *,
+        checkpoint: int | None = None,
+    ) -> LatentFactorState: ...
+
+
+class FactorForecaster(Protocol):
+    """Protocol for factor-premium forecasters."""
+
+    is_fitted: bool
+
+    def fit(self, state: LatentFactorState) -> FitSummary: ...
+
+    def predict(self, state: LatentFactorState) -> FactorForecastResult: ...
+
+
+class AssetMapper(Protocol):
+    """Protocol for mapping factor forecasts back to asset forecasts."""
+
+    def predict(
+        self,
+        state: LatentFactorState,
+        factor_forecast: FactorForecastResult,
+    ) -> AssetForecastResult: ...
+
+
+class PortfolioModel(Protocol):
+    """Protocol for end-to-end portfolio learners."""
+
+    is_fitted: bool
+
+    def fit(self, batch: PortfolioSequenceBatch) -> FitSummary: ...
+
+    def predict(self, batch: PortfolioSequenceBatch) -> PortfolioWeightsResult: ...
