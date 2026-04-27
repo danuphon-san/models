@@ -33,7 +33,7 @@ from ml4t.models.forecasters import (
 from ml4t.models.latent_factors import CAEModel, IPCAModel, PCAModel, SAEModel
 from ml4t.models.mappers import BetaLambdaMapper
 from ml4t.models.pipelines import LatentFactorForecastPipeline
-from ml4t.models.portfolio import DeepPortfolioModel
+from ml4t.models.portfolio import DeepPortfolioModel, LSTMPortfolioModel
 from ml4t.models.stochastic_discount_factor import (
     LinearStochasticDiscountFactorReturnMapper,
     StochasticDiscountFactorModel,
@@ -79,6 +79,7 @@ __all__ = [
     "LatentFactorPrediction",
     "LatentFactorState",
     "LSTMPortfolioConfig",
+    "LSTMPortfolioModel",
     "LinearStochasticDiscountFactorReturnMapper",
     "MapperConfig",
     "PCAConfig",

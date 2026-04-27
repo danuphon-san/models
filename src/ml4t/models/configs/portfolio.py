@@ -13,39 +13,13 @@ class PortfolioConfig(BaseModelConfig):
 
     model_name: str = "portfolio_model"
     turnover_penalty: float = 0.0
-
-
-@dataclass(frozen=True, slots=True)
-class LSTMPortfolioConfig(PortfolioConfig):
-    """Starter config for a sequence-based portfolio learner."""
-
-    model_name: str = "lstm_portfolio"
-    hidden_size: int = 64
-    n_layers: int = 1
-
-
-@dataclass(frozen=True, slots=True)
-class DeepPortfolioConfig(PortfolioConfig):
-    """Config for DeePM-style end-to-end portfolio learners."""
-
-    model_name: str = "deep_portfolio"
-
-    d_model: int = 64
-    n_heads: int = 2
     dropout: float = 0.1
-
-    lstm_layers: int = 1
-    temporal_mha_layers: int = 1
-    cross_attention_heads: int = 2
-    cross_attention_lag: int = 1
-    macro_gnn_heads: int = 2
 
     asset_embedding_dim: int = 8
     group_embedding_dim: int = 4
     use_group_embedding: bool = True
     use_cost_in_context: bool = True
     vvsn_hidden_dim: int = 64
-    adapter_hidden_mult: int = 2
 
     batch_size: int = 16
     learning_rate: float = 1e-4
@@ -66,3 +40,30 @@ class DeepPortfolioConfig(PortfolioConfig):
     checkpoint_every: int = 10
     checkpoint_steps: tuple[int, ...] = ()
     default_checkpoint: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LSTMPortfolioConfig(PortfolioConfig):
+    """Starter config for a sequence-based portfolio learner."""
+
+    model_name: str = "lstm_portfolio"
+    hidden_size: int = 64
+    n_layers: int = 1
+
+
+@dataclass(frozen=True, slots=True)
+class DeepPortfolioConfig(PortfolioConfig):
+    """Config for DeePM-style end-to-end portfolio learners."""
+
+    model_name: str = "deep_portfolio"
+
+    d_model: int = 64
+    n_heads: int = 2
+
+    lstm_layers: int = 1
+    temporal_mha_layers: int = 1
+    cross_attention_heads: int = 2
+    cross_attention_lag: int = 1
+    macro_gnn_heads: int = 2
+
+    adapter_hidden_mult: int = 2

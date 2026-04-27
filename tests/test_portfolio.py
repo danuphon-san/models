@@ -3,7 +3,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from ml4t.models import DeepPortfolioConfig, DeepPortfolioModel, PortfolioSequenceBatch
+from ml4t.models import (
+    DeepPortfolioConfig,
+    DeepPortfolioModel,
+    LSTMPortfolioConfig,
+    LSTMPortfolioModel,
+    PortfolioSequenceBatch,
+)
 
 pytest.importorskip("torch")
 
@@ -71,5 +77,64 @@ def test_deep_portfolio_trains_checkpointed_policy_and_predicts_weights() -> Non
     assert weights.checkpoint_step == 2
     assert weights.weights.shape == (batch_size, n_periods, n_assets)
     assert checkpoint_weights.checkpoint_step == 1
+    assert checkpoint_weights.weights.shape == (batch_size, n_periods, n_assets)
+    assert np.isfinite(weights.weights).all()
+
+
+def test_lstm_portfolio_trains_checkpointed_policy_and_predicts_weights() -> None:
+    rng = np.random.default_rng(19)
+    batch_size = 4
+    n_periods = 5
+    n_assets = 3
+    n_features = 4
+
+    features = rng.normal(size=(batch_size, n_periods, n_assets, n_features))
+    signal = 0.025 * features[..., 0] - 0.015 * features[..., 2]
+    returns = signal + 0.005 * rng.normal(size=signal.shape)
+    vol_scale = np.ones((batch_size, n_periods, n_assets), dtype=np.float64)
+    mask = np.ones((batch_size, n_periods, n_assets), dtype=bool)
+    group_ids = np.array([0, 1, 0], dtype=np.int64)
+    costs = np.array([0.001, 0.0015, 0.002], dtype=np.float64)
+
+    train = PortfolioSequenceBatch(
+        features=features,
+        returns=returns,
+        vol_scale=vol_scale,
+        mask=mask,
+        group_ids=group_ids,
+        costs=costs,
+        asset_ids=("A", "B", "C"),
+    )
+
+    model = LSTMPortfolioModel(
+        LSTMPortfolioConfig(
+            hidden_size=8,
+            n_layers=1,
+            dropout=0.0,
+            asset_embedding_dim=4,
+            group_embedding_dim=2,
+            vvsn_hidden_dim=8,
+            batch_size=2,
+            learning_rate=1e-3,
+            max_iters=3,
+            eval_every=1,
+            checkpoint_every=1,
+            early_stopping_patience=10,
+            early_stopping_burn_in_iters=3,
+            default_checkpoint=2,
+            seed=5,
+            device="cpu",
+        )
+    )
+
+    fit_summary = model.fit(train, validation_batch=train)
+    weights = model.predict(train)
+    checkpoint_weights = model.predict(train, checkpoint=3)
+
+    assert fit_summary.converged
+    assert model.available_checkpoints == (1, 2, 3)
+    assert weights.checkpoint_step == 2
+    assert weights.weights.shape == (batch_size, n_periods, n_assets)
+    assert checkpoint_weights.checkpoint_step == 3
     assert checkpoint_weights.weights.shape == (batch_size, n_periods, n_assets)
     assert np.isfinite(weights.weights).all()

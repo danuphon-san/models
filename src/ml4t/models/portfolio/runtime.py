@@ -1,0 +1,258 @@
+"""Shared runtime helpers for portfolio-learning models."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+import torch
+from torch import nn
+from torch.optim import AdamW
+from torch.utils.data import DataLoader, TensorDataset
+
+from ml4t.models._internal.latent_factor_utils import (
+    resolve_checkpoint_epochs,
+)
+from ml4t.models.configs import PortfolioConfig
+from ml4t.models.portfolio.losses import robust_sharpe_loss
+from ml4t.models.types import PortfolioSequenceBatch
+
+
+@dataclass(frozen=True, slots=True)
+class PortfolioTrainingArtifacts:
+    checkpoint_states: dict[int, dict[str, torch.Tensor]]
+    history: tuple[dict[str, float | str], ...]
+    best_step: int
+    best_validation_sharpe: float
+
+
+def validate_portfolio_batch(batch: PortfolioSequenceBatch) -> None:
+    if batch.returns is None:
+        raise ValueError("portfolio training requires forward returns in the batch")
+    if batch.vol_scale is None:
+        raise ValueError("portfolio training requires vol_scale in the batch")
+
+
+def fit_policy_network(
+    policy: nn.Module,
+    *,
+    batch: PortfolioSequenceBatch,
+    validation_batch: PortfolioSequenceBatch,
+    config: PortfolioConfig,
+    device: torch.device,
+) -> PortfolioTrainingArtifacts:
+    group_ids_train = group_ids_tensor(batch, device)
+    costs_train = costs_tensor(batch, device)
+    group_ids_val = group_ids_tensor(validation_batch, device)
+    costs_val = costs_tensor(validation_batch, device)
+
+    optimizer = AdamW(
+        policy.parameters(),
+        lr=config.learning_rate,
+        weight_decay=config.weight_decay,
+    )
+    train_loader = build_loader(batch, config.batch_size, shuffle=True)
+    checkpoint_steps = tuple(
+        resolve_checkpoint_epochs(
+            config.max_iters,
+            checkpoint_interval=config.checkpoint_every,
+            checkpoint_epochs=list(config.checkpoint_steps) or None,
+        )
+    )
+    asset_indices = torch.arange(batch.n_assets, dtype=torch.long, device=device)
+
+    checkpoint_states: dict[int, dict[str, torch.Tensor]] = {}
+    history: list[dict[str, float | str]] = []
+    best_step = checkpoint_steps[-1]
+    best_val_sharpe = float("-inf")
+    ema_value: float | None = None
+    bad_count = 0
+    train_iter = iter(train_loader)
+
+    for step in range(1, config.max_iters + 1):
+        policy.train()
+        try:
+            features, forward_returns, vol_scale, mask = next(train_iter)
+        except StopIteration:
+            train_iter = iter(train_loader)
+            features, forward_returns, vol_scale, mask = next(train_iter)
+
+        features = features.to(device=device, dtype=torch.float32)
+        forward_returns = forward_returns.to(device=device, dtype=torch.float32)
+        vol_scale = vol_scale.to(device=device, dtype=torch.float32)
+        mask = mask.to(device=device, dtype=torch.float32)
+
+        optimizer.zero_grad(set_to_none=True)
+        weights = policy(
+            features,
+            mask=mask,
+            asset_indices=asset_indices,
+            group_ids=group_ids_train,
+            costs=costs_train,
+        )
+        loss_output = robust_sharpe_loss(
+            weights=weights,
+            forward_returns=forward_returns,
+            vol_scale=vol_scale,
+            mask=mask,
+            costs=costs_train,
+            burn_in=config.burn_in,
+            gamma_cost=config.gamma_cost,
+            annualization_factor=config.annualization_factor,
+            eps=config.sharpe_eps,
+            tau=config.softmin_tau,
+            lambda_soft=config.softmin_lambda,
+        )
+        if torch.isnan(loss_output.loss) or torch.isinf(loss_output.loss):
+            optimizer.zero_grad(set_to_none=True)
+            continue
+        loss_output.loss.backward()
+        if config.max_grad_norm > 0:
+            torch.nn.utils.clip_grad_norm_(policy.parameters(), max_norm=config.max_grad_norm)
+        optimizer.step()
+
+        if step % config.eval_every != 0 and step not in checkpoint_steps:
+            continue
+
+        val_sharpe = evaluate_pooled_sharpe(
+            policy,
+            validation_batch,
+            group_ids=group_ids_val,
+            costs=costs_val,
+            config=config,
+            device=device,
+        )
+        ema_value = val_sharpe if ema_value is None else (
+            config.metric_ema_alpha * val_sharpe + (1.0 - config.metric_ema_alpha) * ema_value
+        )
+        if step >= config.early_stopping_burn_in_iters:
+            if ema_value >= best_val_sharpe + config.metric_min_delta:
+                bad_count = 0
+            else:
+                bad_count += 1
+
+        history.append(
+            {
+                "step": float(step),
+                "train_objective": float(loss_output.objective.item()),
+                "train_sharpe_pool": float(loss_output.sharpe_pool.item()),
+                "validation_sharpe_pool": float(val_sharpe),
+            }
+        )
+        if step in checkpoint_steps:
+            checkpoint_states[step] = cpu_state_dict(policy)
+        if val_sharpe > best_val_sharpe:
+            best_val_sharpe = val_sharpe
+            best_step = step
+        if (
+            step >= config.early_stopping_burn_in_iters
+            and bad_count >= config.early_stopping_patience
+        ):
+            break
+
+    if best_step not in checkpoint_states:
+        checkpoint_states[best_step] = cpu_state_dict(policy)
+
+    return PortfolioTrainingArtifacts(
+        checkpoint_states=checkpoint_states,
+        history=tuple(history),
+        best_step=best_step,
+        best_validation_sharpe=best_val_sharpe,
+    )
+
+
+def build_loader(
+    batch: PortfolioSequenceBatch,
+    batch_size: int,
+    *,
+    shuffle: bool,
+) -> DataLoader:
+    dataset = TensorDataset(
+        torch.as_tensor(batch.features, dtype=torch.float32),
+        torch.as_tensor(batch.returns, dtype=torch.float32),
+        torch.as_tensor(batch.vol_scale, dtype=torch.float32),
+        torch.as_tensor(
+            np.asarray(batch.mask, dtype=np.float32)
+            if batch.mask is not None
+            else np.ones(batch.features.shape[:3], dtype=np.float32),
+            dtype=torch.float32,
+        ),
+    )
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+
+
+@torch.no_grad()
+def evaluate_pooled_sharpe(
+    policy: nn.Module,
+    batch: PortfolioSequenceBatch,
+    *,
+    group_ids: torch.Tensor | None,
+    costs: torch.Tensor | None,
+    config: PortfolioConfig,
+    device: torch.device,
+) -> float:
+    policy.eval()
+    features = torch.as_tensor(batch.features, dtype=torch.float32, device=device)
+    forward_returns = torch.as_tensor(batch.returns, dtype=torch.float32, device=device)
+    vol_scale = torch.as_tensor(batch.vol_scale, dtype=torch.float32, device=device)
+    mask = mask_tensor(batch, device)
+    asset_indices = torch.arange(batch.n_assets, dtype=torch.long, device=device)
+
+    weights = policy(
+        features,
+        mask=mask,
+        asset_indices=asset_indices,
+        group_ids=group_ids,
+        costs=costs,
+    )
+    loss_output = robust_sharpe_loss(
+        weights=weights,
+        forward_returns=forward_returns,
+        vol_scale=vol_scale,
+        mask=mask,
+        costs=costs,
+        burn_in=config.burn_in,
+        gamma_cost=config.gamma_cost,
+        annualization_factor=config.annualization_factor,
+        eps=config.sharpe_eps,
+        tau=config.softmin_tau,
+        lambda_soft=config.softmin_lambda,
+    )
+    return float(loss_output.sharpe_pool.item())
+
+
+def mask_tensor(batch: PortfolioSequenceBatch, device: torch.device) -> torch.Tensor:
+    mask = (
+        np.asarray(batch.mask, dtype=np.float32)
+        if batch.mask is not None
+        else np.ones(batch.features.shape[:3], dtype=np.float32)
+    )
+    return torch.as_tensor(mask, dtype=torch.float32, device=device)
+
+
+def group_ids_tensor(batch: PortfolioSequenceBatch, device: torch.device) -> torch.Tensor | None:
+    if batch.group_ids is None:
+        return None
+    return torch.as_tensor(np.asarray(batch.group_ids, dtype=np.int64), dtype=torch.long, device=device)
+
+
+def costs_tensor(batch: PortfolioSequenceBatch, device: torch.device) -> torch.Tensor | None:
+    if batch.costs is None:
+        return None
+    costs = np.asarray(batch.costs, dtype=np.float32)
+    if costs.ndim == 1:
+        costs = costs[:, None]
+    return torch.as_tensor(costs, dtype=torch.float32, device=device)
+
+
+def adjacency_mask_tensor(
+    batch: PortfolioSequenceBatch,
+    device: torch.device,
+) -> torch.Tensor | None:
+    if batch.adjacency_mask is None:
+        return None
+    return torch.as_tensor(np.asarray(batch.adjacency_mask, dtype=bool), dtype=torch.bool, device=device)
+
+
+def cpu_state_dict(model: nn.Module) -> dict[str, torch.Tensor]:
+    return {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
