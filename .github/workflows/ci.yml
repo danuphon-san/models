@@ -79,10 +79,39 @@ jobs:
       - name: Run tests
         run: uv run pytest tests/ -v --tb=short
 
+  test-package-smoke:
+    name: Test Package Smoke
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Build wheel
+        run: uv build
+
+      - name: Create isolated smoke environment
+        run: uv venv .smoke-venv --python ${{ env.PYTHON_VERSION }}
+
+      - name: Install built wheel
+        run: uv pip install --python .smoke-venv/bin/python dist/*.whl
+
+      - name: Verify import surface
+        run: |
+          .smoke-venv/bin/python -c "import ml4t.models as m; print(m.__version__)"
+          .smoke-venv/bin/python -c "from ml4t.models import PCAModel, SAEModel, StochasticDiscountFactorModel"
+
   build:
     name: Build Package
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, test]
+    needs: [lint, typecheck, test, test-package-smoke]
     steps:
       - uses: actions/checkout@v6
         with:
