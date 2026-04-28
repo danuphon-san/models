@@ -9,12 +9,15 @@ from typing import Any
 
 from ml4t.models.integration.data import resolve_dataset_schema
 from ml4t.models.integration.surfaces import (
-    SurfaceFrame,
-    context_surface_from_weights,
-    prediction_surface_from_asset_forecast,
-    prediction_surface_from_asset_signal,
-    weight_surface_from_asset_weights,
-    weight_surface_from_portfolio_weights,
+    ContextFrame,
+    PredictionsFrame,
+    SignalsFrame,
+    WeightsFrame,
+    context_frame_from_weights,
+    predictions_frame_from_asset_forecast,
+    predictions_frame_from_asset_signal,
+    weights_frame_from_asset_weights,
+    weights_frame_from_portfolio_weights,
 )
 from ml4t.models.types import (
     AssetForecastResult,
@@ -31,8 +34,8 @@ class BacktestDataFeedInputs:
     feed_spec: dict[str, Any]
     prices_frame: Any | None = None
     prices_path: str | Path | None = None
-    signals: SurfaceFrame | None = None
-    context: SurfaceFrame | None = None
+    signals: PredictionsFrame | SignalsFrame | WeightsFrame | None = None
+    context: ContextFrame | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -141,8 +144,8 @@ def backtest_datafeed_inputs(
     *,
     prices_frame: Any | None = None,
     prices_path: str | Path | None = None,
-    signals: SurfaceFrame | None = None,
-    context: SurfaceFrame | None = None,
+    signals: PredictionsFrame | SignalsFrame | WeightsFrame | None = None,
+    context: ContextFrame | None = None,
     schema: Any | None = None,
     timestamp_col: str | None = None,
     entity_col: str | None = None,
@@ -197,7 +200,7 @@ def backtest_datafeed_inputs(
     )
     combined_metadata = dict(metadata or {})
     if signals is not None:
-        combined_metadata.setdefault("signal_surface_type", signals.metadata.get("surface_type"))
+        combined_metadata.setdefault("signal_frame_type", signals.metadata.get("frame_type"))
     return BacktestDataFeedInputs(
         feed_spec=feed_spec,
         prices_frame=prices_frame,
@@ -214,7 +217,7 @@ def backtest_inputs_from_asset_forecast(
     prices_frame: Any | None = None,
     prices_path: str | Path | None = None,
     schema: Any | None = None,
-    context: SurfaceFrame | None = None,
+    context: ContextFrame | None = None,
     timestamp_col: str | None = None,
     entity_col: str | None = None,
     price_col: str | None = None,
@@ -242,7 +245,7 @@ def backtest_inputs_from_asset_forecast(
     return backtest_datafeed_inputs(
         prices_frame=prices_frame,
         prices_path=prices_path,
-        signals=prediction_surface_from_asset_forecast(forecast, constants=constants),
+        signals=predictions_frame_from_asset_forecast(forecast, constants=constants),
         context=context,
         schema=schema,
         timestamp_col=timestamp_col,
@@ -274,7 +277,7 @@ def backtest_inputs_from_asset_signal(
     prices_frame: Any | None = None,
     prices_path: str | Path | None = None,
     schema: Any | None = None,
-    context: SurfaceFrame | None = None,
+    context: ContextFrame | None = None,
     timestamp_col: str | None = None,
     entity_col: str | None = None,
     price_col: str | None = None,
@@ -302,7 +305,7 @@ def backtest_inputs_from_asset_signal(
     return backtest_datafeed_inputs(
         prices_frame=prices_frame,
         prices_path=prices_path,
-        signals=prediction_surface_from_asset_signal(signal, constants=constants),
+        signals=predictions_frame_from_asset_signal(signal, constants=constants),
         context=context,
         schema=schema,
         timestamp_col=timestamp_col,
@@ -360,8 +363,8 @@ def backtest_inputs_from_weights(
 ) -> BacktestDataFeedInputs:
     """Build ``DataFeed`` inputs directly from target-weight outputs."""
 
-    signals = None if as_context else _weight_surface(weights, constants=constants)
-    context = context_surface_from_weights(weights, prefix=context_prefix, constants=constants)
+    signals = None if as_context else _weights_frame(weights, constants=constants)
+    context = context_frame_from_weights(weights, prefix=context_prefix, constants=constants)
     return backtest_datafeed_inputs(
         prices_frame=prices_frame,
         prices_path=prices_path,
@@ -531,11 +534,11 @@ def _normalize_feed_spec_aliases(data: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def _weight_surface(
+def _weights_frame(
     weights: AssetWeightsResult | PortfolioWeightsResult,
     *,
     constants: dict[str, Any] | None,
-) -> SurfaceFrame:
+) -> WeightsFrame:
     if isinstance(weights, AssetWeightsResult):
-        return weight_surface_from_asset_weights(weights, constants=constants)
-    return weight_surface_from_portfolio_weights(weights, constants=constants)
+        return weights_frame_from_asset_weights(weights, constants=constants)
+    return weights_frame_from_portfolio_weights(weights, constants=constants)

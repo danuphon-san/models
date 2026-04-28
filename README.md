@@ -43,7 +43,7 @@ It also keeps the predictive steps explicit:
 - structural extraction
 - factor-premium forecasting
 - asset mapping
-- downstream surface generation for `ml4t-backtest` and `ml4t-diagnostic`
+- downstream prediction and weight frames for `ml4t-backtest` and `ml4t-diagnostic`
 
 ![ml4t-models Architecture](docs/images/ml4t_models_architecture.svg)
 
@@ -145,10 +145,10 @@ print(weights.weights.shape)
 ### 4. Hand Off Predictions To The Rest Of ML4T
 
 ```python
-from ml4t.models import prediction_surface_from_asset_forecast, write_backtest_surfaces
+from ml4t.models import predictions_frame_from_asset_forecast, write_backtest_frames
 
-surface = prediction_surface_from_asset_forecast(prediction.asset_forecast)
-write_backtest_surfaces("artifacts/run_001", predictions=surface)
+frame = predictions_frame_from_asset_forecast(prediction.asset_forecast)
+write_backtest_frames("artifacts/run_001", predictions=frame)
 ```
 
 ## Model Families
@@ -190,7 +190,7 @@ Portfolio models learn allocations directly:
 
 - Finance-native data contracts rather than generic dataloaders
 - Explicit structural and predictive stages
-- Checkpoint-aware neural training surfaces
+- Checkpoint-aware neural training
 - Clear separation between:
   - model estimation
   - forecasting

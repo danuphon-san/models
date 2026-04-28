@@ -56,11 +56,10 @@ Current latent-factor mapper:
 
 - `BetaLambdaMapper`
 
-## Integration Surface
+## Integration
 
 Current integration modules:
 
 - `ml4t.models.integration.data`
 - `ml4t.models.integration.surfaces`
 - `ml4t.models.integration.backtest`
-

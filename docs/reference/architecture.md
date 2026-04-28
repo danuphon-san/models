@@ -101,11 +101,10 @@ ml4t.models
 - model estimation
 - batch and result contracts
 - checkpoint handling
-- surface emission
+- frame emission
 
 ### Belongs Elsewhere
 
 - feature engineering: `ml4t-engineer`
 - execution and order simulation: `ml4t-backtest`
 - validation and diagnostics: `ml4t-diagnostic`
-

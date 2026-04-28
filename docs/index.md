@@ -40,7 +40,7 @@ If you are new to the library, start with the [Quickstart](getting-started/quick
 
     ---
 
-    Emit prediction and weight surfaces for `ml4t-backtest` and `ml4t-diagnostic`
+    Emit prediction and weight frames for `ml4t-backtest` and `ml4t-diagnostic`
     without duplicating evaluation logic inside the model library.
     [:octicons-arrow-right-24: Integration](user-guide/integration.md)
 
@@ -131,4 +131,3 @@ portfolio
 - [Latent-Factor Models](user-guide/latent-factor-models.md)
 - [Architecture](reference/architecture.md)
 - [API Reference](api/index.md)
-

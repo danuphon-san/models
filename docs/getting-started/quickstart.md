@@ -141,17 +141,17 @@ print(portfolio_prediction.weights.shape)
 print(portfolio_prediction.checkpoint_step)
 ```
 
-## 5. Export Surfaces For Backtesting And Diagnostics
+## 5. Export Frames For Backtesting And Diagnostics
 
 ```python
 from ml4t.models import (
     backtest_inputs_from_asset_forecast,
-    prediction_surface_from_asset_forecast,
-    write_backtest_surfaces,
+    predictions_frame_from_asset_forecast,
+    write_backtest_frames,
 )
 
-surface = prediction_surface_from_asset_forecast(forecast=lf_prediction.asset_forecast)
-written = write_backtest_surfaces("artifacts/run_001", predictions=surface)
+frame = predictions_frame_from_asset_forecast(forecast=lf_prediction.asset_forecast)
+written = write_backtest_frames("artifacts/run_001", predictions=frame)
 
 print(written["predictions"])
 ```

@@ -9,7 +9,7 @@
 - model estimation
 - typed input contracts
 - typed result objects
-- prediction and weight surfaces
+- prediction and weight frames
 
 ### This Library Does Not Own
 
@@ -36,14 +36,14 @@ These help when your data starts as:
 - a polars frame
 - a long-format table with ML4T-style schema metadata
 
-## Surface Adapters
+## Frame Adapters
 
-The surface helpers normalize model outputs into standard long-format tables.
+The frame helpers normalize model outputs into standard long-format tables.
 
-### Prediction Surfaces
+### Predictions Frames
 
-- `prediction_surface_from_asset_forecast`
-- `prediction_surface_from_asset_signal`
+- `predictions_frame_from_asset_forecast`
+- `predictions_frame_from_asset_signal`
 
 Output columns:
 
@@ -51,13 +51,13 @@ Output columns:
 - `asset`
 - `prediction_value`
 
-### Weight And Signal Surfaces
+### Weight And Signal Frames
 
-- `signal_surface_from_portfolio_weights`
-- `signal_surface_from_asset_weights`
-- `weight_surface_from_portfolio_weights`
-- `weight_surface_from_asset_weights`
-- `context_surface_from_weights`
+- `signals_frame_from_portfolio_weights`
+- `signals_frame_from_asset_weights`
+- `weights_frame_from_portfolio_weights`
+- `weights_frame_from_asset_weights`
+- `context_frame_from_weights`
 
 ## Backtest Handoff
 
@@ -70,8 +70,8 @@ Use:
 
 These construct:
 
-- standardized signal surfaces
-- optional context surfaces
+- standardized signal frames
+- optional context frames
 - `FeedSpec`-compatible metadata for `ml4t-backtest`
 
 ## Artifact Writing
@@ -79,7 +79,7 @@ These construct:
 Use:
 
 ```python
-from ml4t.models import write_backtest_surfaces
+from ml4t.models import write_backtest_frames
 ```
 
 to emit:
@@ -94,12 +94,12 @@ in the artifact conventions expected downstream.
 ```python
 from ml4t.models import (
     backtest_inputs_from_asset_forecast,
-    prediction_surface_from_asset_forecast,
-    write_backtest_surfaces,
+    predictions_frame_from_asset_forecast,
+    write_backtest_frames,
 )
 
-surface = prediction_surface_from_asset_forecast(asset_forecast)
-write_backtest_surfaces("artifacts/run_001", predictions=surface)
+frame = predictions_frame_from_asset_forecast(asset_forecast)
+write_backtest_frames("artifacts/run_001", predictions=frame)
 
 inputs = backtest_inputs_from_asset_forecast(
     asset_forecast,
@@ -120,4 +120,3 @@ If you find yourself computing:
 - trade analytics
 
 inside `ml4t-models`, you are probably crossing the intended library boundary.
-

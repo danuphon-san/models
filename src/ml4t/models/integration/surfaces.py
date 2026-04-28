@@ -1,11 +1,11 @@
-"""Standardized prediction and signal surfaces for downstream ML4T libraries."""
+"""Standardized prediction and weight frames for downstream ML4T libraries."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from importlib import import_module
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import numpy as np
 
@@ -18,20 +18,20 @@ from ml4t.models.types import (
 
 
 @dataclass(frozen=True, slots=True)
-class SurfaceFrame:
-    """Long-format tabular surface with optional export helpers."""
+class ResultsFrame:
+    """Tabular model results with optional export helpers."""
 
     columns: tuple[str, ...]
     rows: tuple[tuple[Any, ...], ...]
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dicts(self) -> list[dict[str, Any]]:
-        """Return the surface as a list of row dictionaries."""
+        """Return the frame as a list of row dictionaries."""
 
         return [dict(zip(self.columns, row, strict=True)) for row in self.rows]
 
     def to_columnar(self) -> dict[str, list[Any]]:
-        """Return the surface as columnar Python lists."""
+        """Return the frame as columnar Python lists."""
 
         data = {column: [] for column in self.columns}
         for row in self.rows:
@@ -40,13 +40,13 @@ class SurfaceFrame:
         return data
 
     def to_polars(self) -> Any:
-        """Return the surface as a Polars DataFrame when Polars is installed."""
+        """Return the frame as a Polars DataFrame when Polars is installed."""
 
         pl = _import_polars()
         return pl.DataFrame(self.to_dicts())
 
     def write_parquet(self, path: str | Path, *, compression: str = "zstd") -> Path:
-        """Write the surface to parquet when Polars is installed."""
+        """Write the frame to parquet when Polars is installed."""
 
         output_path = Path(path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -54,12 +54,35 @@ class SurfaceFrame:
         return output_path
 
 
-def prediction_surface_from_asset_forecast(
+@dataclass(frozen=True, slots=True)
+class PredictionsFrame(ResultsFrame):
+    """Long-format asset prediction results."""
+
+
+@dataclass(frozen=True, slots=True)
+class SignalsFrame(ResultsFrame):
+    """Long-format asset or portfolio signal results."""
+
+
+@dataclass(frozen=True, slots=True)
+class WeightsFrame(ResultsFrame):
+    """Long-format target-weight results."""
+
+
+@dataclass(frozen=True, slots=True)
+class ContextFrame(ResultsFrame):
+    """Wide context features for backtest handoff."""
+
+
+FrameT = TypeVar("FrameT", SignalsFrame, WeightsFrame)
+
+
+def predictions_frame_from_asset_forecast(
     forecast: AssetForecastResult,
     *,
     constants: dict[str, Any] | None = None,
-) -> SurfaceFrame:
-    """Convert asset expected returns to a diagnostic-ready prediction surface."""
+) -> PredictionsFrame:
+    """Convert asset expected returns to a diagnostic-ready predictions frame."""
 
     expected_returns = np.asarray(forecast.expected_returns, dtype=np.float64)
     timestamps = _resolve_timestamps(expected_returns.shape[0], forecast.timestamps)
@@ -81,19 +104,19 @@ def prediction_surface_from_asset_forecast(
                 )
             )
 
-    return SurfaceFrame(
+    return PredictionsFrame(
         columns=("timestamp", "asset", "prediction_value", *constant_columns),
         rows=tuple(rows),
-        metadata={"surface_type": "prediction", **forecast.metadata},
+        metadata={"frame_type": "prediction", **forecast.metadata},
     )
 
 
-def prediction_surface_from_asset_signal(
+def predictions_frame_from_asset_signal(
     signal: AssetSignalResult,
     *,
     constants: dict[str, Any] | None = None,
-) -> SurfaceFrame:
-    """Convert asset-level signals to a diagnostic-ready prediction surface."""
+) -> PredictionsFrame:
+    """Convert asset-level signals to a diagnostic-ready predictions frame."""
 
     signal_values = np.asarray(signal.signal_values, dtype=np.float64)
     timestamps = _resolve_timestamps(signal_values.shape[0], signal.timestamps)
@@ -115,91 +138,95 @@ def prediction_surface_from_asset_signal(
                 )
             )
 
-    return SurfaceFrame(
+    return PredictionsFrame(
         columns=("timestamp", "asset", "prediction_value", *constant_columns),
         rows=tuple(rows),
-        metadata={"surface_type": "prediction", **signal.metadata},
+        metadata={"frame_type": "prediction", **signal.metadata},
     )
 
 
-def signal_surface_from_portfolio_weights(
+def signals_frame_from_portfolio_weights(
     weights: PortfolioWeightsResult,
     *,
     constants: dict[str, Any] | None = None,
     selected_threshold: float = 1e-9,
-) -> SurfaceFrame:
-    """Convert portfolio weights to a diagnostic-ready signal surface."""
+) -> SignalsFrame:
+    """Convert portfolio weights to a diagnostic-ready signals frame."""
 
-    return _surface_from_portfolio_weights(
+    return _frame_from_portfolio_weights(
         weights,
         value_column="signal_value",
         include_selected=True,
         selected_threshold=selected_threshold,
         constants=constants,
-        surface_type="signal",
+        frame_type="signal",
+        frame_cls=SignalsFrame,
     )
 
 
-def signal_surface_from_asset_weights(
+def signals_frame_from_asset_weights(
     weights: AssetWeightsResult,
     *,
     constants: dict[str, Any] | None = None,
     selected_threshold: float = 1e-9,
-) -> SurfaceFrame:
-    """Convert cross-sectional asset weights to a diagnostic-ready signal surface."""
+) -> SignalsFrame:
+    """Convert cross-sectional asset weights to a diagnostic-ready signals frame."""
 
-    return _surface_from_asset_weights(
+    return _frame_from_asset_weights(
         weights,
         value_column="signal_value",
         include_selected=True,
         selected_threshold=selected_threshold,
         constants=constants,
-        surface_type="signal",
+        frame_type="signal",
+        frame_cls=SignalsFrame,
     )
 
 
-def weight_surface_from_portfolio_weights(
+def weights_frame_from_portfolio_weights(
     weights: PortfolioWeightsResult,
     *,
     constants: dict[str, Any] | None = None,
     selected_threshold: float = 1e-9,
-) -> SurfaceFrame:
-    """Convert portfolio weights to a backtest-ready target-weight surface."""
+) -> WeightsFrame:
+    """Convert portfolio weights to a backtest-ready weights frame."""
 
-    return _surface_from_portfolio_weights(
+    return _frame_from_portfolio_weights(
         weights,
         value_column="weight",
         include_selected=True,
         selected_threshold=selected_threshold,
         constants=constants,
-        surface_type="weight",
+        frame_type="weight",
+        frame_cls=WeightsFrame,
     )
 
 
-def weight_surface_from_asset_weights(
+def weights_frame_from_asset_weights(
     weights: AssetWeightsResult,
     *,
     constants: dict[str, Any] | None = None,
     selected_threshold: float = 1e-9,
-) -> SurfaceFrame:
-    """Convert cross-sectional asset weights to a backtest-ready target-weight surface."""
+) -> WeightsFrame:
+    """Convert cross-sectional asset weights to a backtest-ready weights frame."""
 
-    return _surface_from_asset_weights(
+    return _frame_from_asset_weights(
         weights,
         value_column="weight",
         include_selected=True,
         selected_threshold=selected_threshold,
         constants=constants,
-        surface_type="weight",
+        frame_type="weight",
+        frame_cls=WeightsFrame,
     )
 
 
-def context_surface_from_weights(
+def context_frame_from_weights(
     weights: AssetWeightsResult | PortfolioWeightsResult,
     *,
     prefix: str = "w_",
     constants: dict[str, Any] | None = None,
-) -> SurfaceFrame:
+) -> ContextFrame:
     """Convert asset weights to a wide context frame for backtest strategies."""
 
     weight_matrix, timestamps, assets = _resolve_weight_matrix(weights)
@@ -214,18 +241,18 @@ def context_surface_from_weights(
         ]
         rows.append((timestamp, *values, *tuple((constants or {}).values())))
 
-    metadata = {"surface_type": "context", **weights.metadata}
+    metadata = {"frame_type": "context", **weights.metadata}
     if isinstance(weights, PortfolioWeightsResult) and weights.checkpoint_step is not None:
         metadata["checkpoint_step"] = weights.checkpoint_step
 
-    return SurfaceFrame(columns=columns, rows=tuple(rows), metadata=metadata)
+    return ContextFrame(columns=columns, rows=tuple(rows), metadata=metadata)
 
 
-def write_backtest_surfaces(
+def write_backtest_frames(
     artifact_dir: str | Path,
     *,
-    predictions: SurfaceFrame | None = None,
-    weights: SurfaceFrame | None = None,
+    predictions: PredictionsFrame | None = None,
+    weights: WeightsFrame | None = None,
     compression: str = "zstd",
 ) -> dict[str, Path]:
     """Write standardized prediction and weight artifacts for downstream ML4T tooling."""
@@ -246,15 +273,16 @@ def write_backtest_surfaces(
     return written
 
 
-def _surface_from_portfolio_weights(
+def _frame_from_portfolio_weights(
     weights: PortfolioWeightsResult,
     *,
     value_column: str,
     include_selected: bool,
     selected_threshold: float,
     constants: dict[str, Any] | None,
-    surface_type: str,
-) -> SurfaceFrame:
+    frame_type: str,
+    frame_cls: type[FrameT],
+) -> FrameT:
     weight_array = np.asarray(weights.weights, dtype=np.float64)
     batch_size, n_periods, n_assets = weight_array.shape
     timestamps = _resolve_timestamps(n_periods, weights.timestamps)
@@ -286,28 +314,29 @@ def _surface_from_portfolio_weights(
                 rows.append(tuple(row))
 
     metadata = {
-        "surface_type": surface_type,
+        "frame_type": frame_type,
         **weights.metadata,
     }
     if weights.checkpoint_step is not None:
         metadata["checkpoint_step"] = weights.checkpoint_step
 
-    return SurfaceFrame(
+    return frame_cls(
         columns=tuple(columns),
         rows=tuple(rows),
         metadata=metadata,
     )
 
 
-def _surface_from_asset_weights(
+def _frame_from_asset_weights(
     weights: AssetWeightsResult,
     *,
     value_column: str,
     include_selected: bool,
     selected_threshold: float,
     constants: dict[str, Any] | None,
-    surface_type: str,
-) -> SurfaceFrame:
+    frame_type: str,
+    frame_cls: type[FrameT],
+) -> FrameT:
     weight_array = np.asarray(weights.weights, dtype=np.float64)
     n_periods, n_assets = weight_array.shape
     timestamps = _resolve_timestamps(n_periods, weights.timestamps)
@@ -331,10 +360,10 @@ def _surface_from_asset_weights(
             row.extend((constants or {}).values())
             rows.append(tuple(row))
 
-    return SurfaceFrame(
+    return frame_cls(
         columns=tuple(columns),
         rows=tuple(rows),
-        metadata={"surface_type": surface_type, **weights.metadata},
+        metadata={"frame_type": frame_type, **weights.metadata},
     )
 
 

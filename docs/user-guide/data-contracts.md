@@ -103,7 +103,7 @@ batch = PortfolioSequenceBatch(
 - `N`: assets
 - `F`: features
 
-## Surface Adapters
+## Frame Adapters
 
 When you already have tabular long-format data, use the integration helpers:
 
@@ -129,4 +129,3 @@ These resolve:
 ## Common Mistake
 
 Do not force ragged cross-sectional models into a fixed panel just because a tensor shape is convenient. In asset pricing, that often changes the economic problem rather than just the implementation.
-

@@ -11,7 +11,7 @@ pip install ml4t-models
 - typed batch and result contracts
 - closed-form and NumPy-based model families
 - pipeline composition utilities
-- surface adapters that do not require heavy optional dependencies
+- frame adapters that do not require heavy optional dependencies
 
 ## Optional Extras
 
@@ -41,8 +41,8 @@ pip install ml4t-models[integration]
 
 This extra is useful when you want:
 
-- `SurfaceFrame.to_polars()`
-- parquet writing via `write_backtest_surfaces`
+- `ResultsFrame.to_polars()`
+- parquet writing via `write_backtest_frames`
 - `ml4t-specs`-aware schema resolution
 
 ### Documentation
@@ -98,4 +98,3 @@ uv run --extra docs mkdocs build
 - `ml4t-engineer` for feature generation and labels
 - `ml4t-diagnostic` for IC, validation, and report generation
 - `ml4t-backtest` for execution and backtest state transitions
-

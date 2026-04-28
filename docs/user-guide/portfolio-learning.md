@@ -114,5 +114,4 @@ Current helper:
 
 - `WeightConstraintPostprocessor`
 
-Use it when you want to transform raw learned weights into a stricter target-weight surface before handing them to `ml4t-backtest`.
-
+Use it when you want to transform raw learned weights into a stricter target-weights frame before handing them to `ml4t-backtest`.

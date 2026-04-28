@@ -8,18 +8,18 @@ from ml4t.models import (
     AssetSignalResult,
     AssetWeightsResult,
     PortfolioWeightsResult,
-    context_surface_from_weights,
-    prediction_surface_from_asset_forecast,
-    prediction_surface_from_asset_signal,
-    signal_surface_from_asset_weights,
-    signal_surface_from_portfolio_weights,
-    weight_surface_from_asset_weights,
-    weight_surface_from_portfolio_weights,
-    write_backtest_surfaces,
+    context_frame_from_weights,
+    predictions_frame_from_asset_forecast,
+    predictions_frame_from_asset_signal,
+    signals_frame_from_asset_weights,
+    signals_frame_from_portfolio_weights,
+    weights_frame_from_asset_weights,
+    weights_frame_from_portfolio_weights,
+    write_backtest_frames,
 )
 
 
-def test_prediction_surface_uses_diagnostic_column_names() -> None:
+def test_predictions_frame_uses_diagnostic_column_names() -> None:
     forecast = AssetForecastResult(
         expected_returns=np.array([[0.1, np.nan], [0.2, 0.3]], dtype=np.float64),
         timestamps=("2024-01-01", "2024-01-02"),
@@ -27,19 +27,19 @@ def test_prediction_surface_uses_diagnostic_column_names() -> None:
         metadata={"model_name": "ipca"},
     )
 
-    surface = prediction_surface_from_asset_forecast(
+    frame = predictions_frame_from_asset_forecast(
         forecast,
         constants={"config_name": "baseline"},
     )
 
-    assert surface.columns == ("timestamp", "asset", "prediction_value", "config_name")
-    assert surface.metadata["surface_type"] == "prediction"
-    assert surface.to_dicts()[0]["asset"] == "AAPL"
-    assert surface.to_dicts()[0]["config_name"] == "baseline"
-    assert len(surface.rows) == 3
+    assert frame.columns == ("timestamp", "asset", "prediction_value", "config_name")
+    assert frame.metadata["frame_type"] == "prediction"
+    assert frame.to_dicts()[0]["asset"] == "AAPL"
+    assert frame.to_dicts()[0]["config_name"] == "baseline"
+    assert len(frame.rows) == 3
 
 
-def test_prediction_surface_supports_generic_asset_signals() -> None:
+def test_predictions_frame_supports_generic_asset_signals() -> None:
     signal = AssetSignalResult(
         signal_values=np.array([[0.4, np.nan], [-0.2, 0.1]], dtype=np.float64),
         timestamps=("2024-01-01", "2024-01-02"),
@@ -47,14 +47,14 @@ def test_prediction_surface_supports_generic_asset_signals() -> None:
         metadata={"model_name": "sae"},
     )
 
-    surface = prediction_surface_from_asset_signal(signal)
+    frame = predictions_frame_from_asset_signal(signal)
 
-    assert surface.columns == ("timestamp", "asset", "prediction_value")
-    assert surface.metadata["model_name"] == "sae"
-    assert len(surface.rows) == 3
+    assert frame.columns == ("timestamp", "asset", "prediction_value")
+    assert frame.metadata["model_name"] == "sae"
+    assert len(frame.rows) == 3
 
 
-def test_signal_surface_uses_signal_value_and_selected() -> None:
+def test_signals_frame_uses_signal_value_and_selected() -> None:
     weights = PortfolioWeightsResult(
         weights=np.array([[[0.1, 0.0], [-0.2, 0.3]]], dtype=np.float64),
         checkpoint_step=5,
@@ -62,16 +62,16 @@ def test_signal_surface_uses_signal_value_and_selected() -> None:
         asset_ids=("AAPL", "MSFT"),
     )
 
-    surface = signal_surface_from_portfolio_weights(weights)
+    frame = signals_frame_from_portfolio_weights(weights)
 
-    assert surface.columns == ("timestamp", "asset", "signal_value", "selected")
-    rows = surface.to_dicts()
+    assert frame.columns == ("timestamp", "asset", "signal_value", "selected")
+    rows = frame.to_dicts()
     assert rows[0]["signal_value"] == 0.1
     assert rows[1]["selected"] is False
-    assert surface.metadata["checkpoint_step"] == 5
+    assert frame.metadata["checkpoint_step"] == 5
 
 
-def test_weight_surface_adds_batch_id_for_multi_batch_outputs() -> None:
+def test_weights_frame_adds_batch_id_for_multi_batch_outputs() -> None:
     weights = PortfolioWeightsResult(
         weights=np.array(
             [
@@ -84,32 +84,32 @@ def test_weight_surface_adds_batch_id_for_multi_batch_outputs() -> None:
         asset_ids=("AAPL", "MSFT"),
     )
 
-    surface = weight_surface_from_portfolio_weights(weights, constants={"run_id": "r1"})
+    frame = weights_frame_from_portfolio_weights(weights, constants={"run_id": "r1"})
 
-    assert surface.columns == ("timestamp", "asset", "batch_id", "weight", "selected", "run_id")
-    rows = surface.to_dicts()
+    assert frame.columns == ("timestamp", "asset", "batch_id", "weight", "selected", "run_id")
+    rows = frame.to_dicts()
     assert rows[0]["batch_id"] == 0
     assert rows[-1]["batch_id"] == 1
     assert rows[-1]["run_id"] == "r1"
 
 
-def test_asset_weight_surfaces_support_sdf_style_outputs() -> None:
+def test_asset_weight_frames_support_sdf_style_outputs() -> None:
     weights = AssetWeightsResult(
         weights=np.array([[0.4, -0.1], [0.0, 0.2]], dtype=np.float64),
         timestamps=("2024-01-01", "2024-01-02"),
         asset_ids=("AAPL", "MSFT"),
     )
 
-    signal_surface = signal_surface_from_asset_weights(weights)
-    weight_surface = weight_surface_from_asset_weights(weights)
+    signals_frame = signals_frame_from_asset_weights(weights)
+    weights_frame = weights_frame_from_asset_weights(weights)
 
-    assert signal_surface.columns == ("timestamp", "asset", "signal_value", "selected")
-    assert weight_surface.columns == ("timestamp", "asset", "weight", "selected")
-    assert signal_surface.to_dicts()[1]["selected"] is True
-    assert weight_surface.to_dicts()[2]["selected"] is False
+    assert signals_frame.columns == ("timestamp", "asset", "signal_value", "selected")
+    assert weights_frame.columns == ("timestamp", "asset", "weight", "selected")
+    assert signals_frame.to_dicts()[1]["selected"] is True
+    assert weights_frame.to_dicts()[2]["selected"] is False
 
 
-def test_context_surface_from_weights_builds_wide_context_frame() -> None:
+def test_context_frame_from_weights_builds_wide_context_frame() -> None:
     weights = AssetWeightsResult(
         weights=np.array([[0.4, -0.1], [0.0, 0.2]], dtype=np.float64),
         timestamps=("2024-01-01", "2024-01-02"),
@@ -117,18 +117,18 @@ def test_context_surface_from_weights_builds_wide_context_frame() -> None:
         metadata={"family": "sdf"},
     )
 
-    surface = context_surface_from_weights(weights, prefix="tw_", constants={"run_id": "r1"})
+    frame = context_frame_from_weights(weights, prefix="tw_", constants={"run_id": "r1"})
 
-    assert surface.columns == ("timestamp", "tw_AAPL", "tw_MSFT", "run_id")
-    rows = surface.to_dicts()
+    assert frame.columns == ("timestamp", "tw_AAPL", "tw_MSFT", "run_id")
+    rows = frame.to_dicts()
     assert rows[0]["tw_AAPL"] == 0.4
     assert rows[1]["tw_AAPL"] == 0.0
     assert rows[1]["run_id"] == "r1"
-    assert surface.metadata["surface_type"] == "context"
+    assert frame.metadata["frame_type"] == "context"
 
 
-def test_surface_to_polars_requires_optional_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
-    surface = weight_surface_from_portfolio_weights(
+def test_frame_to_polars_requires_optional_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
+    frame = weights_frame_from_portfolio_weights(
         PortfolioWeightsResult(weights=np.array([[[0.1]]], dtype=np.float64))
     )
 
@@ -137,17 +137,17 @@ def test_surface_to_polars_requires_optional_dependency(monkeypatch: pytest.Monk
 
     monkeypatch.setattr("ml4t.models.integration.surfaces.import_module", _raise_import_error)
     with pytest.raises(ImportError, match="ml4t-models\\[integration\\]"):
-        surface.to_polars()
+        frame.to_polars()
 
 
-def test_write_backtest_surfaces_uses_standard_artifact_names(
+def test_write_backtest_frames_uses_standard_artifact_names(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
-    prediction_surface = prediction_surface_from_asset_forecast(
+    predictions_frame = predictions_frame_from_asset_forecast(
         AssetForecastResult(expected_returns=np.array([[0.1]], dtype=np.float64))
     )
-    weight_surface = weight_surface_from_portfolio_weights(
+    weights_frame = weights_frame_from_portfolio_weights(
         PortfolioWeightsResult(weights=np.array([[[0.2]]], dtype=np.float64))
     )
     written_paths: list[str] = []
@@ -159,13 +159,13 @@ def test_write_backtest_surfaces_uses_standard_artifact_names(
     from pathlib import Path
 
     monkeypatch.setattr(
-        "ml4t.models.integration.surfaces.SurfaceFrame.write_parquet",
+        "ml4t.models.integration.surfaces.ResultsFrame.write_parquet",
         _write_parquet,
     )
-    written = write_backtest_surfaces(
+    written = write_backtest_frames(
         tmp_path,
-        predictions=prediction_surface,
-        weights=weight_surface,
+        predictions=predictions_frame,
+        weights=weights_frame,
     )
 
     assert set(written) == {"predictions", "weights"}

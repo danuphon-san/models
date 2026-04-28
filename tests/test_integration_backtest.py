@@ -14,9 +14,9 @@ from ml4t.models import (
     backtest_inputs_from_asset_forecast,
     backtest_inputs_from_asset_signal,
     backtest_inputs_from_weights,
-    prediction_surface_from_asset_forecast,
+    predictions_frame_from_asset_forecast,
     resolve_feed_spec_mapping,
-    weight_surface_from_portfolio_weights,
+    weights_frame_from_portfolio_weights,
 )
 
 
@@ -55,14 +55,14 @@ def test_backtest_datafeed_inputs_exports_datafeed_kwargs(
     monkeypatch,
 ) -> None:
     prices_frame = object()
-    predictions = prediction_surface_from_asset_forecast(
+    predictions = predictions_frame_from_asset_forecast(
         AssetForecastResult(
             expected_returns=np.array([[0.1]], dtype=np.float64),
             timestamps=("2024-01-01",),
             asset_ids=("AAPL",),
         )
     )
-    weights = weight_surface_from_portfolio_weights(
+    weights = weights_frame_from_portfolio_weights(
         PortfolioWeightsResult(
             weights=np.array([[[0.25]]], dtype=np.float64),
             timestamps=("2024-01-01",),
@@ -72,11 +72,11 @@ def test_backtest_datafeed_inputs_exports_datafeed_kwargs(
     converted_frames: list[str] = []
 
     def _to_polars_predictions(self) -> str:
-        converted_frames.append(self.metadata["surface_type"])
-        return f"{self.metadata['surface_type']}_df"
+        converted_frames.append(self.metadata["frame_type"])
+        return f"{self.metadata['frame_type']}_df"
 
     monkeypatch.setattr(
-        "ml4t.models.integration.surfaces.SurfaceFrame.to_polars",
+        "ml4t.models.integration.surfaces.ResultsFrame.to_polars",
         _to_polars_predictions,
     )
 
@@ -94,7 +94,7 @@ def test_backtest_datafeed_inputs_exports_datafeed_kwargs(
     assert kwargs["context_df"] == "weight_df"
     assert kwargs["feed_spec"]["timestamp_col"] == "timestamp"
     assert kwargs["feed_spec"]["entity_col"] == "asset"
-    assert inputs.metadata["signal_surface_type"] == "prediction"
+    assert inputs.metadata["signal_frame_type"] == "prediction"
     assert converted_frames == ["prediction", "weight"]
 
 
@@ -115,7 +115,7 @@ def test_backtest_datafeed_inputs_supports_prices_path_only() -> None:
     assert kwargs["feed_spec"]["price_col"] == "settle"
 
 
-def test_backtest_inputs_from_asset_forecast_builds_signal_surface(monkeypatch) -> None:
+def test_backtest_inputs_from_asset_forecast_builds_predictions_frame(monkeypatch) -> None:
     forecast = AssetForecastResult(
         expected_returns=np.array([[0.1]], dtype=np.float64),
         timestamps=("2024-01-01",),
@@ -123,7 +123,7 @@ def test_backtest_inputs_from_asset_forecast_builds_signal_surface(monkeypatch) 
     )
 
     monkeypatch.setattr(
-        "ml4t.models.integration.surfaces.SurfaceFrame.to_polars",
+        "ml4t.models.integration.surfaces.ResultsFrame.to_polars",
         lambda self: self.to_dicts(),
     )
 
@@ -139,7 +139,7 @@ def test_backtest_inputs_from_asset_forecast_builds_signal_surface(monkeypatch) 
     assert kwargs["feed_spec"]["entity_col"] == "asset"
 
 
-def test_backtest_inputs_from_asset_signal_builds_signal_surface(monkeypatch) -> None:
+def test_backtest_inputs_from_asset_signal_builds_predictions_frame(monkeypatch) -> None:
     signal = AssetSignalResult(
         signal_values=np.array([[0.7]], dtype=np.float64),
         timestamps=("2024-01-01",),
@@ -147,7 +147,7 @@ def test_backtest_inputs_from_asset_signal_builds_signal_surface(monkeypatch) ->
     )
 
     monkeypatch.setattr(
-        "ml4t.models.integration.surfaces.SurfaceFrame.to_polars",
+        "ml4t.models.integration.surfaces.ResultsFrame.to_polars",
         lambda self: self.to_dicts(),
     )
 
@@ -171,7 +171,7 @@ def test_backtest_inputs_from_weights_supports_signal_and_context_modes(monkeypa
     )
 
     monkeypatch.setattr(
-        "ml4t.models.integration.surfaces.SurfaceFrame.to_polars",
+        "ml4t.models.integration.surfaces.ResultsFrame.to_polars",
         lambda self: self.to_dicts(),
     )
 
