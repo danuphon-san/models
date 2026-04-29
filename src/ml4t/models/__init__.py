@@ -179,7 +179,10 @@ __all__ = [
 def __getattr__(name: str):
     module_map = {
         "DeepPortfolioModel": ("ml4t.models.portfolio.deep_portfolio", "DeepPortfolioModel"),
-        "LinearFeaturePortfolioModel": ("ml4t.models.portfolio.linear", "LinearFeaturePortfolioModel"),
+        "LinearFeaturePortfolioModel": (
+            "ml4t.models.portfolio.linear",
+            "LinearFeaturePortfolioModel",
+        ),
         "LSTMPortfolioModel": ("ml4t.models.portfolio.lstm", "LSTMPortfolioModel"),
         "WeightConstraintPostprocessor": (
             "ml4t.models.portfolio.postprocessors",

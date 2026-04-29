@@ -20,7 +20,10 @@ __all__ = [
 def __getattr__(name: str):
     module_map = {
         "DeepPortfolioModel": ("ml4t.models.portfolio.deep_portfolio", "DeepPortfolioModel"),
-        "LinearFeaturePortfolioModel": ("ml4t.models.portfolio.linear", "LinearFeaturePortfolioModel"),
+        "LinearFeaturePortfolioModel": (
+            "ml4t.models.portfolio.linear",
+            "LinearFeaturePortfolioModel",
+        ),
         "LSTMPortfolioModel": ("ml4t.models.portfolio.lstm", "LSTMPortfolioModel"),
         "PortfolioLossOutput": ("ml4t.models.portfolio.losses", "PortfolioLossOutput"),
         "robust_sharpe_loss": ("ml4t.models.portfolio.losses", "robust_sharpe_loss"),

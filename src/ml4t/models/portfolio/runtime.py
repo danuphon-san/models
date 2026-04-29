@@ -122,8 +122,12 @@ def fit_policy_network(
             config=config,
             device=device,
         )
-        ema_value = val_sharpe if ema_value is None else (
-            config.metric_ema_alpha * val_sharpe + (1.0 - config.metric_ema_alpha) * ema_value
+        ema_value = (
+            val_sharpe
+            if ema_value is None
+            else (
+                config.metric_ema_alpha * val_sharpe + (1.0 - config.metric_ema_alpha) * ema_value
+            )
         )
         if step >= config.early_stopping_burn_in_iters:
             if ema_value >= best_val_sharpe + config.metric_min_delta:
@@ -233,7 +237,9 @@ def mask_tensor(batch: PortfolioSequenceBatch, device: torch.device) -> torch.Te
 def group_ids_tensor(batch: PortfolioSequenceBatch, device: torch.device) -> torch.Tensor | None:
     if batch.group_ids is None:
         return None
-    return torch.as_tensor(np.asarray(batch.group_ids, dtype=np.int64), dtype=torch.long, device=device)
+    return torch.as_tensor(
+        np.asarray(batch.group_ids, dtype=np.int64), dtype=torch.long, device=device
+    )
 
 
 def costs_tensor(batch: PortfolioSequenceBatch, device: torch.device) -> torch.Tensor | None:
@@ -251,7 +257,9 @@ def adjacency_mask_tensor(
 ) -> torch.Tensor | None:
     if batch.adjacency_mask is None:
         return None
-    return torch.as_tensor(np.asarray(batch.adjacency_mask, dtype=bool), dtype=torch.bool, device=device)
+    return torch.as_tensor(
+        np.asarray(batch.adjacency_mask, dtype=bool), dtype=torch.bool, device=device
+    )
 
 
 def cpu_state_dict(model: nn.Module) -> dict[str, torch.Tensor]:

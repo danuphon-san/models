@@ -230,9 +230,7 @@ def unconditional_loss(
     """Unconditional pricing loss with a constant instrument."""
 
     stochastic_discount_factor = construct_stochastic_discount_factor(returns, weights, mask)
-    sample_moments = (
-        returns * mask.float() * stochastic_discount_factor.unsqueeze(1)
-    ).unsqueeze(0)
+    sample_moments = (returns * mask.float() * stochastic_discount_factor.unsqueeze(1)).unsqueeze(0)
     weighted_moments = sample_moments.sum(dim=1) / n_obs_per_asset.clamp(min=1).unsqueeze(0)
     n_obs_norm = n_obs_per_asset / n_obs_per_asset.max().clamp(min=1)
     loss = (weighted_moments.pow(2) * n_obs_norm).mean()
@@ -250,9 +248,7 @@ def conditional_loss(
 
     n_instruments = instruments.shape[0]
     stochastic_discount_factor = construct_stochastic_discount_factor(returns, weights, mask)
-    sample_moments = (
-        returns * mask.float() * stochastic_discount_factor.unsqueeze(1) * instruments
-    )
+    sample_moments = returns * mask.float() * stochastic_discount_factor.unsqueeze(1) * instruments
     weighted_moments = sample_moments.sum(dim=1) / n_obs_per_asset.clamp(min=1).unsqueeze(0)
     n_obs_norm = n_obs_per_asset / n_obs_per_asset.max().clamp(min=1)
     tiled = n_obs_norm.unsqueeze(0).expand(n_instruments, -1)

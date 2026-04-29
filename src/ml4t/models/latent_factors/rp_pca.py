@@ -30,9 +30,7 @@ class RPPCAModel(BaseLatentFactorModel[RPPCAConfig]):
         returns = np.where(np.isfinite(returns), returns, 0.0)
         n_periods, n_assets = returns.shape
         if self.config.n_factors < 1 or self.config.n_factors > n_assets:
-            raise ValueError(
-                f"n_factors must be in [1, {n_assets}]; got {self.config.n_factors}"
-            )
+            raise ValueError(f"n_factors must be in [1, {n_assets}]; got {self.config.n_factors}")
 
         normalization = _cross_section_normalization(
             returns,
@@ -170,8 +168,7 @@ def _risk_premium_matrix(
         base = returns.T @ returns / max(returns.shape[0], 1)
     else:
         raise ValueError(
-            "base_moment must be 'covariance' or 'second_moment'; "
-            f"got {base_moment!r}"
+            f"base_moment must be 'covariance' or 'second_moment'; got {base_moment!r}"
         )
     return base + gamma * np.outer(mean_returns, mean_returns)
 
@@ -196,7 +193,9 @@ def _orthogonalize(
     rotation = np.linalg.inv(r) @ np.diag(np.diag(r)) if unit_length else np.linalg.inv(r)
     factor_weights = factor_weights @ rotation
     if unit_length:
-        scale = np.sqrt(np.clip(np.diag(factor_weights.T @ factor_weights), a_min=1e-12, a_max=None))
+        scale = np.sqrt(
+            np.clip(np.diag(factor_weights.T @ factor_weights), a_min=1e-12, a_max=None)
+        )
         factor_weights = factor_weights @ np.diag(1.0 / scale)
     factor_returns = returns @ factor_weights
     signs = np.sign(np.mean(factor_returns, axis=0))

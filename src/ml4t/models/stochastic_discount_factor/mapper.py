@@ -203,7 +203,9 @@ class StochasticDiscountFactorBetaNetworkHead:
                 available=checkpoint_epochs,
             ),
             history=self._history,
-            notes=("Beta-network signal head trained on returns times realized stochastic discount factor portfolio return.",),
+            notes=(
+                "Beta-network signal head trained on returns times realized stochastic discount factor portfolio return.",
+            ),
         )
 
     def predict(
@@ -293,7 +295,9 @@ def _beta_training_payload(
 ) -> dict[str, Any] | None:
     if batch.returns is None or state.sdf_values is None:
         return None
-    mask = _resolve_mask(batch) & np.isfinite(batch.returns) & np.isfinite(state.sdf_values)[:, None]
+    mask = (
+        _resolve_mask(batch) & np.isfinite(batch.returns) & np.isfinite(state.sdf_values)[:, None]
+    )
     if not mask.any():
         return None
     f_hat = 1.0 - np.asarray(state.sdf_values, dtype=np.float64)
@@ -319,7 +323,9 @@ def _beta_training_payload(
 
 
 def _beta_loss(torch: Any, model: Any, payload: dict[str, Any]) -> Any:
-    asset_features = torch.as_tensor(payload["asset_features"], dtype=torch.float32, device=next(model.parameters()).device)
+    asset_features = torch.as_tensor(
+        payload["asset_features"], dtype=torch.float32, device=next(model.parameters()).device
+    )
     context_features = None
     if payload["context_features"] is not None:
         context_features = torch.as_tensor(
@@ -327,8 +333,12 @@ def _beta_loss(torch: Any, model: Any, payload: dict[str, Any]) -> Any:
             dtype=torch.float32,
             device=next(model.parameters()).device,
         )
-    mask = torch.as_tensor(payload["mask"], dtype=torch.bool, device=next(model.parameters()).device)
-    target = torch.as_tensor(payload["target"], dtype=torch.float32, device=next(model.parameters()).device)
+    mask = torch.as_tensor(
+        payload["mask"], dtype=torch.bool, device=next(model.parameters()).device
+    )
+    target = torch.as_tensor(
+        payload["target"], dtype=torch.float32, device=next(model.parameters()).device
+    )
     pred, _ = model(asset_features, context_features=context_features, mask=mask)
     target_flat = target[mask]
     return torch.mean((pred - target_flat) ** 2)

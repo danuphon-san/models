@@ -54,7 +54,9 @@ def resolve_dataset_schema(
         )
 
     resolved_entity = (
-        entity_col or inferred_schema.get("entity_col") or _first_present(columns, entity_candidates)
+        entity_col
+        or inferred_schema.get("entity_col")
+        or _first_present(columns, entity_candidates)
     )
     if resolved_entity is None:
         raise ValueError(
@@ -91,9 +93,13 @@ def persistent_panel_batch_from_long_frame(
         timestamp_col=timestamp_col,
         entity_col=entity_col,
     )
-    records = _sorted_records(frame, timestamp_col=resolved.timestamp_col, entity_col=resolved.entity_col)
+    records = _sorted_records(
+        frame, timestamp_col=resolved.timestamp_col, entity_col=resolved.entity_col
+    )
     timestamps = tuple(_ordered_unique(record[resolved.timestamp_col] for record in records))
-    asset_ids = tuple(str(asset) for asset in _ordered_unique(record[resolved.entity_col] for record in records))
+    asset_ids = tuple(
+        str(asset) for asset in _ordered_unique(record[resolved.entity_col] for record in records)
+    )
     time_index = {timestamp: idx for idx, timestamp in enumerate(timestamps)}
     asset_index = {asset: idx for idx, asset in enumerate(asset_ids)}
 
@@ -114,8 +120,7 @@ def persistent_panel_batch_from_long_frame(
         key = (record[resolved.timestamp_col], str(record[resolved.entity_col]))
         if key in seen:
             raise ValueError(
-                "Duplicate (timestamp, entity) row encountered in long-format panel data: "
-                f"{key}"
+                f"Duplicate (timestamp, entity) row encountered in long-format panel data: {key}"
             )
         seen.add(key)
         t_idx = time_index[record[resolved.timestamp_col]]
@@ -158,7 +163,9 @@ def cross_section_batch_from_long_frame(
         timestamp_col=timestamp_col,
         entity_col=entity_col,
     )
-    records = _sorted_records(frame, timestamp_col=resolved.timestamp_col, entity_col=resolved.entity_col)
+    records = _sorted_records(
+        frame, timestamp_col=resolved.timestamp_col, entity_col=resolved.entity_col
+    )
     timestamps = tuple(_ordered_unique(record[resolved.timestamp_col] for record in records))
     grouped_assets = {
         timestamp: [record for record in records if record[resolved.timestamp_col] == timestamp]
@@ -188,7 +195,9 @@ def cross_section_batch_from_long_frame(
             mask[t_idx, slot_idx] = True
             for f_idx, feature_col in enumerate(feature_cols):
                 value = record[feature_col]
-                characteristics[t_idx, slot_idx, f_idx] = float(value) if _is_finite(value) else np.nan
+                characteristics[t_idx, slot_idx, f_idx] = (
+                    float(value) if _is_finite(value) else np.nan
+                )
             if returns is not None and return_col is not None:
                 value = record[return_col]
                 returns[t_idx, slot_idx] = float(value) if _is_finite(value) else np.nan
@@ -293,10 +302,7 @@ def _sorted_records(frame: Any, *, timestamp_col: str, entity_col: str) -> list[
     if not arrays:
         return []
     n_rows = len(next(iter(arrays.values())))
-    records = [
-        {column: arrays[column][row_idx] for column in columns}
-        for row_idx in range(n_rows)
-    ]
+    records = [{column: arrays[column][row_idx] for column in columns} for row_idx in range(n_rows)]
     return sorted(records, key=lambda row: (row[timestamp_col], str(row[entity_col])))
 
 

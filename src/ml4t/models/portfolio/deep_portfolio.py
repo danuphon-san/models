@@ -122,9 +122,13 @@ class DeepPortfolioPolicy(nn.Module):
             n_periods,
             self.config.d_model,
         )
-        asset_context = context.unsqueeze(0).expand(batch_size, n_assets, -1).reshape(
-            batch_size * n_assets,
-            -1,
+        asset_context = (
+            context.unsqueeze(0)
+            .expand(batch_size, n_assets, -1)
+            .reshape(
+                batch_size * n_assets,
+                -1,
+            )
         )
         h0 = (
             self.h0_projection(asset_context)

@@ -86,9 +86,13 @@ class LSTMPortfolioPolicy(nn.Module):
             self.config.hidden_size,
         )
 
-        asset_context = context.unsqueeze(0).expand(batch_size, n_assets, -1).reshape(
-            batch_size * n_assets,
-            -1,
+        asset_context = (
+            context.unsqueeze(0)
+            .expand(batch_size, n_assets, -1)
+            .reshape(
+                batch_size * n_assets,
+                -1,
+            )
         )
         h0 = (
             self.h0_projection(asset_context)

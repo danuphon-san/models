@@ -99,11 +99,15 @@ class VariableSelection(nn.Module):
 
     def forward(self, features: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
         batch_size, n_periods, n_assets, _ = features.shape
-        context_expanded = context.unsqueeze(0).unsqueeze(0).expand(
-            batch_size,
-            n_periods,
-            n_assets,
-            -1,
+        context_expanded = (
+            context.unsqueeze(0)
+            .unsqueeze(0)
+            .expand(
+                batch_size,
+                n_periods,
+                n_assets,
+                -1,
+            )
         )
         logits = self.selector(torch.cat([features, context_expanded], dim=-1))
         weights = torch.softmax(logits, dim=-1)
