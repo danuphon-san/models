@@ -130,6 +130,104 @@ def test_stochastic_discount_factor_beta_head_returns_signals() -> None:
     assert np.isfinite(signal.signal_values).any()
 
 
+def _sdf_batch(seed: int, n_periods: int = 8, n_assets: int = 6, n_features: int = 3) -> CrossSectionBatch:
+    rng = np.random.default_rng(seed)
+    characteristics = rng.normal(size=(n_periods, n_assets, n_features))
+    signal = 0.4 * characteristics[..., 0] - 0.2 * characteristics[..., 1]
+    returns = 0.05 * signal + 0.01 * rng.normal(size=signal.shape)
+    return CrossSectionBatch(
+        characteristics=characteristics,
+        returns=returns,
+        timestamps=tuple(f"2024-{i:02d}" for i in range(1, n_periods + 1)),
+        asset_ids=tuple(f"A{i}" for i in range(n_assets)),
+    )
+
+
+def test_phase_local_burn_in_resets_between_phases() -> None:
+    """Burn-in is phase-local: early epochs of BOTH phases are skipped (CPZ ignoreEpoch)."""
+    model = StochasticDiscountFactorModel(
+        StochasticDiscountFactorConfig(
+            state_dim_sdf=2,
+            state_dim_moment=4,
+            hidden_dim=8,
+            n_instruments=3,
+            n_epochs_unc=5,
+            n_epochs_moment=2,
+            n_epochs_cond=5,
+            checkpoint_interval=1,
+            burn_in_epochs=3,
+            dropout=0.0,
+        )
+    )
+    model.fit(_sdf_batch(seed=1))
+    # Phase 1 global epochs 1-5: skip phase_epoch 1-3 -> keep 4, 5.
+    # Phase 3 global epochs 6-10 (phase_epoch 1-5): skip phase_epoch 1-3 -> keep 9, 10.
+    assert model.available_checkpoints == (4, 5, 9, 10)
+    # A global counter would have kept 6, 7, 8 (all > 3); phase-local burn-in drops them.
+    assert 6 not in model.available_checkpoints
+    assert 7 not in model.available_checkpoints
+    assert 8 not in model.available_checkpoints
+
+
+def test_validation_best_checkpoints_tracked() -> None:
+    """fit(validation_batch=...) stores CPZ best-by-val-loss and best-by-val-sharpe per phase."""
+    from ml4t.models.stochastic_discount_factor.model import (
+        VAL_BEST_LOSS_CONDITIONAL,
+        VAL_BEST_LOSS_UNCONDITIONAL,
+        VAL_BEST_SHARPE_CONDITIONAL,
+        VAL_BEST_SHARPE_UNCONDITIONAL,
+    )
+
+    model = StochasticDiscountFactorModel(
+        StochasticDiscountFactorConfig(
+            state_dim_sdf=2,
+            state_dim_moment=4,
+            hidden_dim=8,
+            n_instruments=3,
+            n_epochs_unc=6,
+            n_epochs_moment=2,
+            n_epochs_cond=6,
+            checkpoint_interval=2,
+            dropout=0.0,
+        )
+    )
+    train = _sdf_batch(seed=2)
+    val = _sdf_batch(seed=3)
+    model.fit(train, validation_batch=val)
+
+    keys = model.available_checkpoints
+    for sentinel in (
+        VAL_BEST_LOSS_UNCONDITIONAL,
+        VAL_BEST_SHARPE_UNCONDITIONAL,
+        VAL_BEST_LOSS_CONDITIONAL,
+        VAL_BEST_SHARPE_CONDITIONAL,
+    ):
+        assert sentinel in keys
+
+    # The val-sharpe-best conditional checkpoint is extractable and finite.
+    state = model.extract(train, checkpoint=VAL_BEST_SHARPE_CONDITIONAL)
+    assert state.checkpoint_epoch == VAL_BEST_SHARPE_CONDITIONAL
+    assert np.isfinite(state.asset_weights[np.isfinite(state.asset_weights)]).all()
+
+    # Default extraction (no checkpoint) still selects a positive epoch, not a sentinel.
+    default_state = model.extract(train)
+    assert default_state.checkpoint_epoch > 0
+
+
+def test_validation_batch_requires_returns() -> None:
+    model = StochasticDiscountFactorModel(
+        StochasticDiscountFactorConfig(n_epochs_unc=2, n_epochs_moment=1, n_epochs_cond=2)
+    )
+    train = _sdf_batch(seed=4)
+    val_no_returns = CrossSectionBatch(
+        characteristics=np.random.default_rng(5).normal(size=(8, 6, 3)),
+        timestamps=tuple(f"2024-{i:02d}" for i in range(1, 9)),
+        asset_ids=tuple(f"A{i}" for i in range(6)),
+    )
+    with pytest.raises(ValueError, match="validation_batch requires returns"):
+        model.fit(train, validation_batch=val_no_returns)
+
+
 def test_stochastic_discount_factor_rejects_non_weight_native_output_mode() -> None:
     batch = CrossSectionBatch(
         characteristics=np.zeros((2, 3, 2), dtype=np.float64),

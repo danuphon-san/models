@@ -17,6 +17,14 @@ from ml4t.models.configs import StochasticDiscountFactorConfig
 from ml4t.models.stochastic_discount_factor.base import BaseStochasticDiscountFactorModel
 from ml4t.models.types import CrossSectionBatch, FitSummary, StochasticDiscountFactorState
 
+# CPZ best-by-validation checkpoint sentinels. Negative so they never collide
+# with the positive interval-checkpoint grid and never become the extract()
+# default (which is the largest available key, i.e. the final epoch).
+VAL_BEST_LOSS_UNCONDITIONAL = -1
+VAL_BEST_SHARPE_UNCONDITIONAL = -2
+VAL_BEST_LOSS_CONDITIONAL = -3
+VAL_BEST_SHARPE_CONDITIONAL = -4
+
 
 class StochasticDiscountFactorModel(BaseStochasticDiscountFactorModel):
     """Stochastic discount factor model with weight-native structural outputs."""
@@ -33,9 +41,19 @@ class StochasticDiscountFactorModel(BaseStochasticDiscountFactorModel):
     def available_checkpoints(self) -> tuple[int, ...]:
         return tuple(sorted(self._checkpoint_states))
 
-    def fit(self, batch: CrossSectionBatch) -> FitSummary:
+    def fit(
+        self,
+        batch: CrossSectionBatch,
+        *,
+        validation_batch: CrossSectionBatch | None = None,
+        patience: int | None = None,
+    ) -> FitSummary:
         if batch.returns is None:
             raise ValueError("Stochastic discount factor training requires returns in the batch")
+        if validation_batch is not None and validation_batch.returns is None:
+            raise ValueError(
+                "validation_batch requires returns to compute CPZ best-by-validation checkpoints"
+            )
         if self.config.output_mode != "weights":
             raise ValueError(
                 "StochasticDiscountFactorModel is weight-native; use a mapper for expected-return output"
@@ -67,6 +85,12 @@ class StochasticDiscountFactorModel(BaseStochasticDiscountFactorModel):
                 device=device,
             )
 
+        # Seed BEFORE constructing the networks so weight initialization is
+        # governed by config.seed (otherwise init draws from the un-seeded
+        # global RNG and SDF results are not reproducible across runs).
+        seed_torch(torch, self.config.seed, device)
+        np.random.seed(self.config.seed)
+
         stochastic_discount_factor_net = nn.StochasticDiscountFactorNetwork(
             n_asset_features=batch.characteristics.shape[2],
             n_context_features=0 if context_features is None else context_features.shape[1],
@@ -81,9 +105,6 @@ class StochasticDiscountFactorModel(BaseStochasticDiscountFactorModel):
             state_dim=self.config.state_dim_moment,
             dropout=self.config.dropout,
         ).to(device)
-
-        seed_torch(torch, self.config.seed, device)
-        np.random.seed(self.config.seed)
 
         sdf_optimizer = torch.optim.Adam(
             stochastic_discount_factor_net.parameters(),
@@ -108,7 +129,18 @@ class StochasticDiscountFactorModel(BaseStochasticDiscountFactorModel):
         history: list[dict[str, float | str]] = []
         sdf_epoch = 0
 
-        for _ in range(self.config.n_epochs_unc):
+        val_tensors = (
+            _prepare_sdf_tensors(validation_batch, torch, device)
+            if validation_batch is not None
+            else None
+        )
+        best_val_loss_unc = float("inf")
+        best_val_sharpe_unc = float("-inf")
+        best_val_loss_cond = float("inf")
+        best_val_sharpe_cond = float("-inf")
+        epochs_since_improve = 0
+
+        for phase_epoch in range(1, self.config.n_epochs_unc + 1):
             sdf_epoch += 1
             stochastic_discount_factor_net.train()
             weights, _ = stochastic_discount_factor_net(
@@ -134,11 +166,39 @@ class StochasticDiscountFactorModel(BaseStochasticDiscountFactorModel):
             )
             self._maybe_store_checkpoint(
                 epoch=sdf_epoch,
+                phase_epoch=phase_epoch,
                 checkpoint_epochs=checkpoint_epochs,
                 stochastic_discount_factor_net=stochastic_discount_factor_net,
                 moment_net=moment_net,
             )
 
+            if val_tensors is not None and phase_epoch > self.config.burn_in_epochs:
+                val_loss, val_sharpe = _validation_metrics(
+                    stochastic_discount_factor_net=stochastic_discount_factor_net,
+                    moment_net=moment_net,
+                    val_tensors=val_tensors,
+                    phase="unconditional",
+                    nn=nn,
+                    torch=torch,
+                )
+                improved = False
+                if val_loss < best_val_loss_unc:
+                    best_val_loss_unc = val_loss
+                    self._checkpoint_states[VAL_BEST_LOSS_UNCONDITIONAL] = _capture_state(
+                        stochastic_discount_factor_net, moment_net
+                    )
+                    improved = True
+                if val_sharpe > best_val_sharpe_unc:
+                    best_val_sharpe_unc = val_sharpe
+                    self._checkpoint_states[VAL_BEST_SHARPE_UNCONDITIONAL] = _capture_state(
+                        stochastic_discount_factor_net, moment_net
+                    )
+                    improved = True
+                epochs_since_improve = 0 if improved else epochs_since_improve + 1
+                if patience is not None and epochs_since_improve >= patience:
+                    break
+
+        epochs_since_improve = 0
         best_moment_state = deepcopy(moment_net.state_dict())
         best_moment_loss = float("-inf")
         for _ in range(self.config.n_epochs_moment):
@@ -162,7 +222,7 @@ class StochasticDiscountFactorModel(BaseStochasticDiscountFactorModel):
 
         moment_net.load_state_dict(best_moment_state)
 
-        for _ in range(self.config.n_epochs_cond):
+        for phase_epoch in range(1, self.config.n_epochs_cond + 1):
             sdf_epoch += 1
             stochastic_discount_factor_net.train()
             moment_net.eval()
@@ -191,10 +251,37 @@ class StochasticDiscountFactorModel(BaseStochasticDiscountFactorModel):
             )
             self._maybe_store_checkpoint(
                 epoch=sdf_epoch,
+                phase_epoch=phase_epoch,
                 checkpoint_epochs=checkpoint_epochs,
                 stochastic_discount_factor_net=stochastic_discount_factor_net,
                 moment_net=moment_net,
             )
+
+            if val_tensors is not None and phase_epoch > self.config.burn_in_epochs:
+                val_loss, val_sharpe = _validation_metrics(
+                    stochastic_discount_factor_net=stochastic_discount_factor_net,
+                    moment_net=moment_net,
+                    val_tensors=val_tensors,
+                    phase="conditional",
+                    nn=nn,
+                    torch=torch,
+                )
+                improved = False
+                if val_loss < best_val_loss_cond:
+                    best_val_loss_cond = val_loss
+                    self._checkpoint_states[VAL_BEST_LOSS_CONDITIONAL] = _capture_state(
+                        stochastic_discount_factor_net, moment_net
+                    )
+                    improved = True
+                if val_sharpe > best_val_sharpe_cond:
+                    best_val_sharpe_cond = val_sharpe
+                    self._checkpoint_states[VAL_BEST_SHARPE_CONDITIONAL] = _capture_state(
+                        stochastic_discount_factor_net, moment_net
+                    )
+                    improved = True
+                epochs_since_improve = 0 if improved else epochs_since_improve + 1
+                if patience is not None and epochs_since_improve >= patience:
+                    break
 
         self._history = tuple(history)
         self._asset_ids = batch.asset_ids
@@ -318,16 +405,19 @@ class StochasticDiscountFactorModel(BaseStochasticDiscountFactorModel):
         self,
         *,
         epoch: int,
+        phase_epoch: int,
         checkpoint_epochs: tuple[int, ...],
         stochastic_discount_factor_net: Any,
         moment_net: Any,
     ) -> None:
-        if epoch <= self.config.burn_in_epochs or epoch not in checkpoint_epochs:
+        # Burn-in is phase-local (CPZ uses a per-phase `ignoreEpoch`); the
+        # storage key remains the global epoch so the positive checkpoint grid
+        # is unique across phases.
+        if phase_epoch <= self.config.burn_in_epochs or epoch not in checkpoint_epochs:
             return
-        self._checkpoint_states[epoch] = {
-            "stochastic_discount_factor": _cpu_state_dict(stochastic_discount_factor_net),
-            "moment": _cpu_state_dict(moment_net),
-        }
+        self._checkpoint_states[epoch] = _capture_state(
+            stochastic_discount_factor_net, moment_net
+        )
 
 
 def _resolve_mask(batch: CrossSectionBatch, torch: Any, device: Any) -> Any:
@@ -357,6 +447,60 @@ def _reshape_weight_panel(
 
 def _cpu_state_dict(model: Any) -> dict[str, Any]:
     return {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
+
+
+def _capture_state(stochastic_discount_factor_net: Any, moment_net: Any) -> dict[str, dict[str, Any]]:
+    return {
+        "stochastic_discount_factor": _cpu_state_dict(stochastic_discount_factor_net),
+        "moment": _cpu_state_dict(moment_net),
+    }
+
+
+def _prepare_sdf_tensors(batch: CrossSectionBatch, torch: Any, device: Any) -> tuple[Any, ...]:
+    returns_raw = torch.as_tensor(np.asarray(batch.returns, dtype=np.float32), device=device)
+    mask = _resolve_mask(batch, torch, device)
+    returns = torch.where(mask, returns_raw, torch.zeros_like(returns_raw))
+    n_obs_per_asset = mask.float().sum(dim=0)
+    asset_features = torch.as_tensor(
+        np.asarray(batch.characteristics, dtype=np.float32), dtype=torch.float32, device=device
+    )
+    context_features = None
+    if batch.context_features is not None:
+        context_features = torch.as_tensor(
+            np.asarray(batch.context_features, dtype=np.float32), dtype=torch.float32, device=device
+        )
+    return returns, mask, n_obs_per_asset, asset_features, context_features
+
+
+def _validation_metrics(
+    *,
+    stochastic_discount_factor_net: Any,
+    moment_net: Any,
+    val_tensors: tuple[Any, ...],
+    phase: str,
+    nn: Any,
+    torch: Any,
+) -> tuple[float, float]:
+    """CPZ per-phase validation loss and SDF-portfolio Sharpe on the full val panel."""
+    returns, mask, n_obs_per_asset, asset_features, context_features = val_tensors
+    was_training = stochastic_discount_factor_net.training
+    stochastic_discount_factor_net.eval()
+    with torch.no_grad():
+        weights, _ = stochastic_discount_factor_net(
+            asset_features, context_features=context_features, mask=mask
+        )
+        if phase == "unconditional":
+            loss, sdf_values = nn.unconditional_loss(weights, returns, mask, n_obs_per_asset)
+        else:
+            moment_net.eval()
+            instruments, _ = moment_net(asset_features, context_features=context_features)
+            loss, sdf_values = nn.conditional_loss(
+                weights, instruments, returns, mask, n_obs_per_asset
+            )
+        sharpe = nn.compute_sharpe(sdf_values)
+    if was_training:
+        stochastic_discount_factor_net.train()
+    return float(loss.item()), float(sharpe.item())
 
 
 def _import_stochastic_discount_factor_nn() -> Any:
